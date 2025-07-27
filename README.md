@@ -10,4 +10,4 @@ Install nessasary library referring to requirements.txt:
 ## Reprocessing Data
 
 ## Model Training-Testing
-Run training-testing.py file while import GP-WAITER model from ./model/GP-WAITER.py. Then generate trained models and test the models on a test dataset.  
+Run training-testing.py file while import GP-WAITER model from './model/GP-WAITER.py'. Then generate trained models and test the models on a test dataset.  
