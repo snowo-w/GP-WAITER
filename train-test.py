@@ -68,7 +68,7 @@ def transform(line_gen):
 
 def train(phe_s,num_epochs,batch_size,lr):
     filepath_gen = "/data/rest/rest1/" + phe_s + "_gen.txt"
-    filepath_phe = "/rest/rest1/" + phe_s + "_phe.csv"
+    filepath_phe = "/data/rest/rest1/" + phe_s + "_phe.csv"
    
     phe=pd.read_csv(filepath_phe)
   
@@ -76,8 +76,8 @@ def train(phe_s,num_epochs,batch_size,lr):
   
     g_array=[]
 
-    site=pd.read_csv("data/sites_score/sitescore_"+phe_s+".csv")
-    env_SiteScore=site.values#(10,826020)
+    site=pd.read_csv("/data/rest/random_train_data/train_score/"+phe_s+"_sitescore.csv")
+    env_SiteScore=site.iloc[:, 2].to_numpy()
   
     env_SiteScore = env_SiteScore.reshape(180, 4589)
  
@@ -137,11 +137,12 @@ def train(phe_s,num_epochs,batch_size,lr):
                                    shuffle=True)
     early_stopping = EarlyStopping(patience=5, verbose=True, path=params_path+'/best_model.params')
     for epoch in range(num_epochs):
-        time_epoch_start = time.time()
+        #time_epoch_start = time.time()
         params_filename = os.path.join(params_path, 'epoch_%s.params' % epoch) 
 
         t_labels = []
         t_outputs = []
+        train_loss=0.0
         for batch_index, (train_data, train_label) in enumerate(train_loader):
             if torch.cuda.is_available():
                 train_data = train_data.cuda()
@@ -149,7 +150,7 @@ def train(phe_s,num_epochs,batch_size,lr):
             # input_data = train_data.view(train_data.size(0), -1)
                 output = model(train_data)
                 loss = criterion(output, train_label)
-                train_loss += loss.item() * data.size(0)
+                train_loss += loss.item()
                 print('output:',output.shape)
                 print('train_label:',train_label.shape)
 
@@ -178,14 +179,15 @@ def train(phe_s,num_epochs,batch_size,lr):
         test_prediction=[]
         test_all_labels=[]
         with torch.no_grad():
-           model.eval()
+            model.eval()
+            val_loss=0.0
             for batch_index, (test_data, test_label) in enumerate(test_loader):
                 if torch.cuda.is_available():
                     test_data = test_data.cuda()
 
                     test_output = model(test_data)
                     test_loss = criterion(test_output, test_label)
-                    val_loss += test_loss.item() * data.size(0)
+                    val_loss += test_loss.item()
             
                     a = test_output.to('cpu').numpy()
                     test_prediction.append(a)
@@ -195,8 +197,7 @@ def train(phe_s,num_epochs,batch_size,lr):
                 print("a.shape,b.shape:",a.shape,b.shape)
             val_loss /= len(test_loader.dataset)
             test_outputs = np.concatenate(test_prediction, axis=0)
-            # to_std=np.std(test_outputs)
-            # print('test_prediction_outputs=======================', to_std)
+
             test_labels = np.concatenate(test_all_labels, axis=0)
 
             print("test_outputs.shape,test_labels.shape:",test_outputs.shape,test_labels.shape)
