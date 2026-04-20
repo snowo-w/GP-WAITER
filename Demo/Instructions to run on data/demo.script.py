@@ -12,7 +12,7 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 import torch.utils.data as Data
 import torch.optim as optim
-import GP_WAITER as gp
+import GP_WAITER_demo as gp
 
     
 def log_training_info(logfile, epoch, epoch_loss, corr_train, corr_test):
@@ -110,7 +110,7 @@ def train(phe_s,root_path, divide, num_epochs, batch_size, lr, summary_logfile):
     # 读取权重文件
     site = pd.read_csv(filepath_site)
     site = site["c2"].to_numpy()
-    SiteScore = np.log10(1/site).reshape(112,597)
+    SiteScore = np.log10(1/site).reshape(112,597)#180, 4589  112,597
     SiteScore = torch.tensor(SiteScore, dtype=torch.float32).to(DEVICE)
     print(f"权重文件的形状:{SiteScore.shape}")
 
@@ -198,6 +198,7 @@ def train(phe_s,root_path, divide, num_epochs, batch_size, lr, summary_logfile):
             print(f'output:{output.shape}')
             train_label = train_label.squeeze()
             print(f'train_lable:{train_label.shape}')
+
             loss = criterion(output, train_label)
             epoch_loss = epoch_loss + loss
 
@@ -232,8 +233,8 @@ def train(phe_s,root_path, divide, num_epochs, batch_size, lr, summary_logfile):
 
                 test_output = model(test_data)  # test_output: (batch_size, 3)
                 
-                test_loss = criterion(test_output, test_label)
-                val_loss += test_loss.item() * data.size(0)
+                test_loss = criterion(test_output, test_label.cuda())
+                val_loss += test_loss.item()
                 test_label = test_label.squeeze()
                 # 累积测试数据
                 test_outputs.append(test_output.cpu().numpy())
