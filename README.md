@@ -9,7 +9,7 @@ GP-WAITER (Genome-Phenotype prediction using Weighted self-AttentIon TransformER
 ├──README.md
 ├──model
 |    ├──.keep
-|    ├──GP_WAITER.py
+|    ├──GP_WAITER.so
 ├──Demo
 |    ├──Instructions to run on data
 |    |    ├──demo_data
@@ -111,7 +111,9 @@ We provide some datasets to help train and test GP-WAITER. Meanwhile, you can do
 |      |Phenotype|Soybean192_phe.csv|192   |16      |
 |Wheat406|Genotype    |Wheat406_gen.csv|406 |234,219     |
 |      |Phenotype|Wheat406_phe.csv|406   |9      |
-
+# Citation
+Please cite:
+Li, J., Yu, L., Li, M. et al. Leveraging weighted embedding and Transformer architecture to improve phenotype prediction of complex traits for crops. Nat Commun (2026). https://doi.org/10.1038/s41467-026-71035-5
 
 
 
