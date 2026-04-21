@@ -32,7 +32,7 @@ GP-WAITER (Genome-Phenotype prediction using Weighted self-AttentIon TransformER
 ### Hardware
 You need GPU with at least 8GB cache and CPU.  
 ### Software
-First, please install CUDA==11.3(compatiable with pytorch) and python==1.12.
+First, please install CUDA==11.3(compatiable with pytorch) and python==3.1.
 
 Then, install nessasary libraries referring to requirements.txt:
 
