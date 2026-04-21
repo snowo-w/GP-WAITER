@@ -1,4 +1,6 @@
 # GP-WAITER
+![GP-WAITER](./images/figure1.png)
+
 GP-WAITER (Genome-Phenotype prediction using Weighted self-AttentIon TransformER) is a novel model that integrates GWAS-derived SNP weights into a hybrid CNN-Transformer architecture via an efficient tokenized embedding scheme. The model's design enables dynamic learning of trait-associated feature weights and effective modeling of long-range interactions within ultra-long genomic sequences.
 # Project Structure
 ```
