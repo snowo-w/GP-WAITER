@@ -3,7 +3,6 @@ import os
 import shutil
 import time
 import json
-
 # 2. Third-party imports
 import torch
 from torch import nn
@@ -12,9 +11,9 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 import torch.utils.data as Data
 import torch.optim as optim
-import GP_WAITER_demo as gp
+from model import GP_WAITER as gp
 
-    
+
 def log_training_info(logfile, epoch, epoch_loss, corr_train, corr_test):
     log_entry = {
         "epoch": epoch,
@@ -47,7 +46,7 @@ def transform(line_gen):
 
 class EarlyStopping:
    
-    def __init__(self, patience=10, verbose=False, delta=0, path='checkpoint.params'):
+    def __init__(self, patience=10, verbose=False, delta=0, path=''):
         """
         Args:
             patience (int): 验证损失没有提升的容忍 epoch 数，之后停止
@@ -65,13 +64,13 @@ class EarlyStopping:
         self.val_loss_min = np.Inf   # 当前最小验证损失
 
     def __call__(self, val_loss, model):
-        score = -val_loss   # 损失越小越好，取负后越大表示越好
+        score = val_loss
 
         if self.best_score is None:
             # 第一次调用，直接保存模型
             self.best_score = score
             self.save_checkpoint(val_loss, model)
-        elif score < self.best_score + self.delta:
+        elif score > self.best_score - self.delta:
             # 没有提升（score 没有大于 best_score + delta）
             self.counter += 1
             print(f'EarlyStopping counter: {self.counter} out of {self.patience}')
@@ -147,6 +146,12 @@ def train(phe_s,root_path, divide, num_epochs, batch_size, lr, summary_logfile):
     print(f'Created new params directory: {params_path}')
 
     #some parameters
+    conv_params=[
+        {"in_channels": 1, "out_channels": 1, "kernel_size": (50, 101), "stride": (1, 1)},
+        {"in_channels": 1, "out_channels": 1, "kernel_size": (32, 101), "stride": (1, 1)},
+        {"in_channels": 1, "out_channels": 1, "kernel_size": (1, 101), "stride": (1, 1)},
+        {"in_channels": 1, "out_channels": 1, "kernel_size": (1, 100), "stride": (1, 1)}
+    ]
     param=[
         {"embed_size1":198,"embed_size2":150,"num_heads":9},
         {"embed_size1":150,"embed_size2":100,"num_heads":10},
@@ -154,7 +159,7 @@ def train(phe_s,root_path, divide, num_epochs, batch_size, lr, summary_logfile):
         ]
         
     # 初始化模型对象，传递设置好的参数，还没有开始训练
-    model=gp.TModel(embed_size=20,w=SiteScore,param=param,num_layers=3).to(DEVICE)
+    model=gp.TModel(embed_size=param[2]["embed_size2"],w=SiteScore,conv_params=conv_params,param=param,num_layers=3).to(DEVICE)
 
     criterion = nn.MSELoss()
     Optimizer = optim.Adam(model.parameters(), lr=lr)
@@ -182,21 +187,22 @@ def train(phe_s,root_path, divide, num_epochs, batch_size, lr, summary_logfile):
     best_outputs = []  # 存储最佳模型下的所有预测值
     best_labels = []   # 存储最佳模型下的所有真实值
     
-    early_stopping = EarlyStopping(patience=5, verbose=True, path=params_path+'/best_model.params')
+    early_stopping = EarlyStopping(patience=20, verbose=True, delta=1e-4, path=params_path+'/best_model.params')
     for epoch in range(num_epochs):
         model.train()
         train_labels = []         # 每个通道的真实标签
         train_outputs = []        # 每个通道的预测输出
         epoch_loss = 0.0
+
         for batch_index, (train_data, train_label) in enumerate(train_loader):
 
             if torch.cuda.is_available():
                 train_data = train_data.cuda()
-                train_label = train_label.cuda()
+                train_label = train_label.squeeze().cuda()
 
             output = model(train_data)  # output: (batch_size, 3)
             print(f'output:{output.shape}')
-            train_label = train_label.squeeze()
+
             print(f'train_lable:{train_label.shape}')
 
             loss = criterion(output, train_label)
@@ -212,7 +218,7 @@ def train(phe_s,root_path, divide, num_epochs, batch_size, lr, summary_logfile):
             train_labels.append(train_label.detach().cpu().numpy())
 
             print(f"Epoch: {epoch}, batch_index: {batch_index}, Loss: {loss:.5f}")
-        
+        # train_loss=loss/(batch_index+1)
         train_outputs = np.concatenate(train_outputs, axis=0)
         train_labels = np.concatenate(train_labels, axis=0)
         print(f'the shape of train_outputs:{train_outputs.shape}')
@@ -224,18 +230,15 @@ def train(phe_s,root_path, divide, num_epochs, batch_size, lr, summary_logfile):
         ##### 测试集部分
         test_outputs = []
         test_labels = []
-        val_loss=0
         with torch.no_grad():
+
             model.eval()
             for batch_index, (test_data, test_label) in enumerate(test_loader):
                 if torch.cuda.is_available():
                     test_data = test_data.cuda()
-
+                    test_label=test_label.squeeze().cuda()
                 test_output = model(test_data)  # test_output: (batch_size, 3)
-                
-                test_loss = criterion(test_output, test_label.cuda())
-                val_loss += test_loss.item()
-                test_label = test_label.squeeze()
+
                 # 累积测试数据
                 test_outputs.append(test_output.cpu().numpy())
                 test_labels.append(test_label.cpu().numpy())
@@ -244,6 +247,8 @@ def train(phe_s,root_path, divide, num_epochs, batch_size, lr, summary_logfile):
             test_labels = np.concatenate(test_labels, axis=0)  # 合并所有的真实标签  
             print(f'the shape of test_outputs:{test_outputs.shape}')
             print(f'the shape of test_labels:{test_labels.shape}')
+            test_loss = criterion(torch.Tensor(test_outputs), torch.Tensor(test_labels)).item()
+            print("Testing loss:",test_loss)
             corr_test = np.corrcoef(test_outputs, test_labels)[0, 1]
             print(f"Testing correlation in Epoch:{epoch} is {corr_test}")
         
@@ -270,8 +275,9 @@ def train(phe_s,root_path, divide, num_epochs, batch_size, lr, summary_logfile):
 
         # 记录训练日志
         log_training_info(logfile, epoch, epoch_loss, corr_train, corr_test)
-        val_loss /= len(test_loader.dataset)
-        early_stopping(val_loss, model)
+
+        # val_loss /= (len(ytest)//batch_size)
+        early_stopping(test_loss, model)
         if early_stopping.early_stop:
             print("Early stopping triggered")
             break
