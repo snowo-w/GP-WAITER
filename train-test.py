@@ -1,7 +1,7 @@
 import numpy as np
 from sklearn.model_selection import train_test_split
 import torch.utils.data as Data
-import time
+# from orin import GP_WAITER as gp
 from model import GP_WAITER as gp
 import shutil
 import os
@@ -14,7 +14,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 class EarlyStopping:
    
-    def __init__(self, patience=7, verbose=False, delta=0, path='checkpoint.pt'):
+    def __init__(self, patience=7, verbose=False, delta=0, path=''):
         """
         Args:
             patience (int): 验证损失没有提升的容忍 epoch 数，之后停止
@@ -32,13 +32,13 @@ class EarlyStopping:
         self.val_loss_min = np.Inf   # 当前最小验证损失
 
     def __call__(self, val_loss, model):
-        score = -val_loss   # 损失越小越好，取负后越大表示越好
+        score = val_loss  
 
         if self.best_score is None:
             # 第一次调用，直接保存模型
             self.best_score = score
             self.save_checkpoint(val_loss, model)
-        elif score < self.best_score + self.delta:
+        elif score > self.best_score - self.delta:
             # 没有提升（score 没有大于 best_score + delta）
             self.counter += 1
             print(f'EarlyStopping counter: {self.counter} out of {self.patience}')
@@ -67,8 +67,8 @@ def transform(line_gen):
 
 
 def train(phe_s,num_epochs,batch_size,lr):
-    filepath_gen = "/data/rest/rest1/" + phe_s + "_gen.txt"
-    filepath_phe = "/data/rest/rest1/" + phe_s + "_phe.csv"
+    filepath_gen = "./data/" + phe_s + "_gen.txt"
+    filepath_phe = "./data/" + phe_s + "_phe.csv"
    
     phe=pd.read_csv(filepath_phe)
   
@@ -76,7 +76,7 @@ def train(phe_s,num_epochs,batch_size,lr):
   
     g_array=[]
 
-    site=pd.read_csv("/data/rest/random_train_data/train_score/"+phe_s+"_sitescore.csv")
+    site=pd.read_csv("./data/"+phe_s+"_sitescore.csv")
     env_SiteScore=site.iloc[:, 2].to_numpy()
   
     env_SiteScore = env_SiteScore.reshape(180, 4589)
@@ -113,9 +113,19 @@ def train(phe_s,num_epochs,batch_size,lr):
     DEVICE = torch.device('cuda:0')
     # DEVICE = torch.device('cpu')
     print("CUDA:", USE_CUDA, DEVICE)
-    param=[{"embed_size1":312,"embed_size2":260,"num_heads":12},{"embed_size1":260,"embed_size2":100,"num_heads":10},{"embed_size1":100,"embed_size2":20,"num_heads":5}]
-    env_SiteScore=torch.Tensor(env_SiteScore).to(DEVICE)
-    model=gp.TModel(embed_size=20,w=env_SiteScore,param=param,num_layers=3)
+    env_SiteScore = torch.Tensor(env_SiteScore).to(DEVICE)
+    param=[{"embed_size1":312,"embed_size2":260,"num_heads":12},
+           {"embed_size1":260,"embed_size2":100,"num_heads":10},
+           {"embed_size1":100,"embed_size2":20,"num_heads":5}]
+
+    conv_params = [
+        {"in_channels": 1, "out_channels": 1, "kernel_size": (90, 101), "stride": (1, 4)},
+        {"in_channels": 1, "out_channels": 1, "kernel_size": (60, 101), "stride": (1, 2)},
+        {"in_channels": 1, "out_channels": 1, "kernel_size": (1, 101), "stride": (1, 1)},
+        {"in_channels": 1, "out_channels": 1, "kernel_size": (1, 101), "stride": (1, 1)}
+    ]
+
+    model=gp.TModel(embed_size=param[2]["embed_size2"],w=env_SiteScore,conv_params=conv_params,param=param,num_layers=3).to(DEVICE)
   
     if torch.cuda.is_available():
         model.cuda()  
@@ -135,7 +145,7 @@ def train(phe_s,num_epochs,batch_size,lr):
     test_dataset = Data.TensorDataset(xtest,ytest)
     test_loader = Data.DataLoader(dataset=test_dataset, batch_size=batch_size, num_workers=1, drop_last=False,
                                    shuffle=True)
-    early_stopping = EarlyStopping(patience=5, verbose=True, path=params_path+'/best_model.params')
+    early_stopping = EarlyStopping(patience=20, verbose=True, delta=1e-4, path=params_path+'/best_model.params')
     for epoch in range(num_epochs):
         #time_epoch_start = time.time()
         params_filename = os.path.join(params_path, 'epoch_%s.params' % epoch) 
@@ -146,7 +156,8 @@ def train(phe_s,num_epochs,batch_size,lr):
         for batch_index, (train_data, train_label) in enumerate(train_loader):
             if torch.cuda.is_available():
                 train_data = train_data.cuda()
-                train_label = train_label.squeeze().cuda()
+                print("++++",train_label.shape)
+                train_label = train_label.cuda()
             # input_data = train_data.view(train_data.size(0), -1)
                 output = model(train_data)
                 loss = criterion(output, train_label)
@@ -172,7 +183,7 @@ def train(phe_s,num_epochs,batch_size,lr):
      
         m = np.corrcoef(t_outputs, t_labels)
         print("correlation coefficient of train:", m)
-        train_loss /= len(train_loader.dataset)
+        train_loss=criterion(torch.Tensor(t_outputs),torch.Tensor(t_labels)).item()
         sw.add_scalar("training loss per epoch",  train_loss, epoch)
         sw.add_scalar("correlation coefficient of training_dataset per epoch", m[0, 1], epoch)
         torch.save(model.state_dict(), params_filename)
@@ -180,32 +191,31 @@ def train(phe_s,num_epochs,batch_size,lr):
         test_all_labels=[]
         with torch.no_grad():
             model.eval()
-            val_loss=0.0
             for batch_index, (test_data, test_label) in enumerate(test_loader):
                 if torch.cuda.is_available():
                     test_data = test_data.cuda()
-
+                    test_label = test_label.cuda()
                     test_output = model(test_data)
-                    test_loss = criterion(test_output, test_label)
-                    val_loss += test_loss.item()
+                    # test_loss = criterion(test_output, test_label)
+                    # val_loss += test_loss.item()
             
                     a = test_output.to('cpu').numpy()
                     test_prediction.append(a)
                     b = test_label.cpu().numpy()
                     test_all_labels.append(b)
-                print("batch_index=======",batch_index)
-                print("a.shape,b.shape:",a.shape,b.shape)
-            val_loss /= len(test_loader.dataset)
+                # print("batch_index=======",batch_index)
+                # print("a.shape,b.shape:",a.shape,b.shape)
+            # val_loss /= len(test_loader.dataset)
             test_outputs = np.concatenate(test_prediction, axis=0)
 
             test_labels = np.concatenate(test_all_labels, axis=0)
-
+            test_loss = criterion(torch.Tensor(test_outputs), torch.Tensor(test_labels)).item()
             print("test_outputs.shape,test_labels.shape:",test_outputs.shape,test_labels.shape)
             m = np.corrcoef(test_outputs, test_labels)
             print("correlation coefficient of test:", m)
             sw.add_scalar("correlation coefficient of testing dataset per epoch", m[0, 1], epoch)
 
-        early_stopping(val_loss, model)
+        early_stopping(test_loss, model)
         if early_stopping.early_stop:
             print("Early stopping triggered")
             break
